@@ -1071,6 +1071,60 @@ void write_multiple_dirties(const Position& p,
       _mm512_ternarylogic_epi32(template_v, threat_squares, threat_pieces, 254 /* A | B | C */);
     _mm512_storeu_si512(write, dirties);
 }
+
+#elif defined(USE_AVX512)
+
+// Still defined when b == 0
+inline int safe_pop_lsb(uint64_t& b) {
+    int s = _tzcnt_u64(b);
+    b &= b - 1;
+    return s;
+}
+
+template<int SqShift, int PcShift>
+void write_multiple_dirties(const Position& p,
+                            Bitboard        mask,
+                            DirtyThreat     dt_template,
+                            DirtyThreats*   dts) {
+    static_assert(sizeof(DirtyThreat) == 4);
+
+    const __m512i board = _mm512_loadu_si512(p.piece_array().data());
+
+    const int dt_count = popcount(mask);
+    assert(dt_count <= 16);
+
+    const __m512i template_v = _mm512_set1_epi32(dt_template.raw());
+    auto*         write      = dts->list.make_space(dt_count);
+
+    __m512i threat_squares = _mm512_setzero_epi32();
+    if (dt_count <= 3) {
+        for (int i = 0; i < 3; ++i) {
+            const int sq = safe_pop_lsb(mask);
+            threat_squares = _mm512_mask_mov_epi32(threat_squares, 1 << i, _mm512_set1_epi32(sq));
+        }
+    } else {
+        for (int i = 0; i < dt_count; ++i) {
+            const int sq = pop_lsb(mask);
+            threat_squares = _mm512_mask_mov_epi32(threat_squares, 1 << i, _mm512_set1_epi32(sq));
+        }
+    }
+
+    // Divide squares by 2 and shuffle pairs of pieces
+    __m512i indices = _mm512_srli_epi32(threat_squares, 1);
+    __m512i threat_pieces = _mm512_permutexvar_epi16(indices, board);
+    uint16_t odd_mask = _mm512_test_epi32_mask(threat_squares, _mm512_set1_epi32(1));
+    threat_pieces = _mm512_mask_srli_epi32(threat_pieces, odd_mask, threat_pieces, 8);
+    threat_pieces = _mm512_and_si512(threat_pieces, _mm512_set1_epi32(0xFF));
+
+    // Shift the piece and square into place
+    threat_squares = _mm512_slli_epi32(threat_squares, SqShift);
+    threat_pieces  = _mm512_slli_epi32(threat_pieces, PcShift);
+
+    const __m512i dirties =
+      _mm512_ternarylogic_epi32(template_v, threat_squares, threat_pieces, 254 /* A | B | C */);
+    _mm512_storeu_si512(write, dirties);
+}
+
 #endif
 
 template<bool PutPiece, bool ComputeRay>
@@ -1127,7 +1181,7 @@ void Position::update_piece_threats(Piece                     pc,
       (PseudoAttacks[KNIGHT][s] & knights) | (attacks_bb<PAWN>(s, WHITE) & blackPawns)
       | (attacks_bb<PAWN>(s, BLACK) & whitePawns) | (PseudoAttacks[KING][s] & kings);
 
-#ifdef USE_AVX512ICL
+#if defined(USE_AVX512ICL) || defined(USE_AVX512)
     if constexpr (PutPiece)
     {
         dts->threatenedSqs |= threatened;
@@ -1164,9 +1218,9 @@ void Position::update_piece_threats(Piece                     pc,
 
     if constexpr (ComputeRay)
     {
-#ifndef USE_AVX512ICL
+#if !defined(USE_AVX512ICL) && !defined(USE_AVX512)
         process_sliders(true);
-#else  // for ICL, direct threats were processed earlier (all_attackers)
+#else  // for AVX512, direct threats were processed earlier (all_attackers)
         process_sliders(false);
 #endif
     }
@@ -1175,7 +1229,7 @@ void Position::update_piece_threats(Piece                     pc,
         incoming_threats |= sliders;
     }
 
-#ifndef USE_AVX512ICL
+#if !defined(USE_AVX512ICL) && !defined(USE_AVX512)
     while (incoming_threats)
     {
         Square srcSq = pop_lsb(incoming_threats);
