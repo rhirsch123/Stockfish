@@ -881,11 +881,11 @@ Value Search::Worker::search(
 
             return futilityMult * d
                  - (2661 * improving + 355 * opponentWorsening) * futilityMult / 1024  //
-                 + std::abs(correctionValue) / 176900;
+                 + std::abs(correctionValue) / 176900 + 150 * d * (ss->ttHit && !ttCapture);
         };
 
         if (!ss->ttPv && depth < 16 && eval - futility_margin(depth) >= beta && eval >= beta
-            && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval))
+            && !is_loss(beta) && !is_win(eval))
             return (2 * beta + eval) / 3;
     }
 
