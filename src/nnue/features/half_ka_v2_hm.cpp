@@ -27,6 +27,57 @@
 
 namespace Stockfish::Eval::NNUE::Features {
 
+#if defined(USE_AVX512ICL)
+void HalfKAv2_hm::write_indices(const std::array<Piece, SQUARE_NB>& oldPieces,
+                                const std::array<Piece, SQUARE_NB>& newPieces,
+                                Bitboard removedBB,
+                                Bitboard addedBB,
+                                Color perspective,
+                                Square ksq,
+                                ValueList<uint16_t, MaxActiveDimensions>& removed,
+                                ValueList<uint16_t, MaxActiveDimensions>& added) {
+
+    auto* write_removed = removed.make_space(popcount(removedBB));
+    auto* write_added = added.make_space(popcount(addedBB));
+
+    const __m512i vecOldPieces = _mm512_loadu_si512(oldPieces.data());
+    const __m512i vecNewPieces = _mm512_loadu_si512(newPieces.data());
+
+    const __m512i psi =
+      _mm512_zextsi256_si512(
+        _mm256_loadu_si256(reinterpret_cast<const __m256i*>(PieceSquareIndex[perspective])));
+
+    const __m512i allSquares = _mm512_set_epi8(
+      63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48,
+      47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32,
+      31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16,
+      15, 14, 13, 12, 11, 10, 9,  8,  7,  6,  5,  4,  3,  2,  1,  0
+    );
+
+    const uint16_t flip = 56 * perspective;
+    const __m512i orient = _mm512_set1_epi16(OrientTBL[ksq] ^ flip);
+    const __m512i bucket = _mm512_set1_epi16(KingBuckets[int(ksq) ^ flip]);
+
+    auto make_indices = [&](Bitboard bb, __m512i board) {
+        __m512i squares = _mm512_maskz_compress_epi8(bb, allSquares);
+        __m512i pieces = _mm512_permutexvar_epi8(squares, board);
+        squares = _mm512_cvtepi8_epi16(_mm512_castsi512_si256(squares));
+        pieces = _mm512_cvtepi8_epi16(_mm512_castsi512_si256(pieces));
+        const __m512i changed_psi = _mm512_permutexvar_epi16(pieces, psi);
+        __m512i indices = _mm512_xor_si512(squares, orient);
+        indices = _mm512_add_epi16(indices, changed_psi);
+        indices = _mm512_add_epi16(indices, bucket);
+        return indices;
+    };
+
+    const __m512i removed_indices = make_indices(removedBB, vecOldPieces);
+    const __m512i added_indices = make_indices(addedBB, vecNewPieces);
+
+    _mm512_storeu_si512(write_removed, removed_indices);
+    _mm512_storeu_si512(write_added, added_indices);
+}
+#endif
+
 // Index of a feature for a given king position and another piece on some square
 
 IndexType HalfKAv2_hm::make_index(Color perspective, Square s, Piece pc, Square ksq) {

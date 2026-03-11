@@ -54,7 +54,7 @@ class HalfKAv2_hm {
         PS_NB       = 11 * SQUARE_NB
     };
 
-    static constexpr IndexType PieceSquareIndex[COLOR_NB][PIECE_NB] = {
+    static constexpr uint16_t PieceSquareIndex[COLOR_NB][PIECE_NB] = {
       // Convention: W - us, B - them
       // Viewed from other side, W and B are reversed
       {PS_NONE, PS_W_PAWN, PS_W_KNIGHT, PS_W_BISHOP, PS_W_ROOK, PS_W_QUEEN, PS_KING, PS_NONE,
@@ -75,7 +75,7 @@ class HalfKAv2_hm {
 
 #define B(v) (v * PS_NB)
     // clang-format off
-    static constexpr IndexType KingBuckets[SQUARE_NB] = {
+    static constexpr uint16_t KingBuckets[SQUARE_NB] = {
         B(28), B(29), B(30), B(31), B(31), B(30), B(29), B(28),
         B(24), B(25), B(26), B(27), B(27), B(26), B(25), B(24),
         B(20), B(21), B(22), B(23), B(23), B(22), B(21), B(20),
@@ -89,7 +89,7 @@ class HalfKAv2_hm {
 #undef B
     // clang-format off
     // Orient a square according to perspective (rotates by 180 for black)
-    static constexpr IndexType OrientTBL[SQUARE_NB] = {
+    static constexpr uint16_t OrientTBL[SQUARE_NB] = {
         SQ_H1, SQ_H1, SQ_H1, SQ_H1, SQ_A1, SQ_A1, SQ_A1, SQ_A1,
         SQ_H1, SQ_H1, SQ_H1, SQ_H1, SQ_A1, SQ_A1, SQ_A1, SQ_A1,
         SQ_H1, SQ_H1, SQ_H1, SQ_H1, SQ_A1, SQ_A1, SQ_A1, SQ_A1,
@@ -105,6 +105,15 @@ class HalfKAv2_hm {
     static constexpr IndexType MaxActiveDimensions = 32;
     using IndexList                                = ValueList<IndexType, MaxActiveDimensions>;
     using DiffType                                 = DirtyPiece;
+
+    #if defined(USE_AVX512ICL)
+    // Compute all changed feature indices and write them to the given lists
+    static void write_indices(
+      const std::array<Piece, SQUARE_NB>& oldPieces, const std::array<Piece, SQUARE_NB>& newPieces,
+      Bitboard removedBB, Bitboard addedBB, Color perspective, Square ksq,
+      ValueList<uint16_t, MaxActiveDimensions>& removed,
+      ValueList<uint16_t, MaxActiveDimensions>& added);
+    #endif
 
     // Index of a feature for a given king position and another piece on some square
 
