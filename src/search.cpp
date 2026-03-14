@@ -884,7 +884,8 @@ Value Search::Worker::search(
                  + std::abs(correctionValue) / 176900;
         };
 
-        bool ttTactic = ttData.move && pos.legal(ttData.move) && (ttCapture || pos.gives_check(ttData.move) || (ttData.move.type_of() == PROMOTION));
+        bool ttTactic = ttData.move && pos.pseudo_legal(ttData.move) &&
+            (ttCapture || pos.gives_check(ttData.move) || (ttData.move.type_of() == PROMOTION));
         if (!ss->ttPv && depth < 16 && eval - futility_margin(depth) >= beta && eval >= beta
             && (!ttData.move || ttTactic) && !is_loss(beta) && !is_win(eval))
             return (2 * beta + eval) / 3;
