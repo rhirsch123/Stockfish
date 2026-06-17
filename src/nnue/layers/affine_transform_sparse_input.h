@@ -248,9 +248,12 @@ class AffineTransformSparseInput {
             asm("" : "+r"(base_addr), "+r"(weights_base));  // opt barrier
         #endif
 
+            static constexpr int8_t offsets[8] = {0, 4, 8, 12, -12, -8, -4, 0};
+
             while (bits)
             {
                 isize       i          = pop_lsb(bits);
+                i += offsets[(i >> 2) & 7];
                 const auto* input_addr = base_addr + i * sizeof(i32);
                 auto        col =
                   reinterpret_cast<const invec_t*>(&weights_base[i * OutputDimensions * ChunkSize]);

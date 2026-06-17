@@ -115,7 +115,8 @@ struct NNZInfo {
         }
 
     #if (defined(USE_SSSE3) || defined(USE_LSX) || defined(USE_LASX) || (USE_NEON >= 8))
-        void record2(SIMD::vec_t neurons1, SIMD::vec_t neurons2) {
+        void record4(SIMD::vec_t neurons1, SIMD::vec_t neurons2,
+                     SIMD::vec_t neurons3, SIMD::vec_t neurons4) {
             using namespace SIMD;
 
         #ifdef USE_NEON
@@ -137,21 +138,13 @@ struct NNZInfo {
             packed         = _mm_packs_epi16(packed, packed);
             *out++         = ~_mm_movemask_epi8(_mm_cmpeq_epi8(packed, _mm_setzero_si128()));
         #else
-            auto m1 = vec_nnz(neurons1);
-            auto m2 = vec_nnz(neurons2);
+            __m256i p1 = _mm256_packs_epi32(neurons1, neurons2);
+            __m256i p2 = _mm256_packs_epi32(neurons3, neurons4);
+            __m256i packed = _mm256_packs_epi16(p1, p2);
+            uint32_t mask = _mm256_movemask_epi8(_mm256_cmpgt_epi8(packed, _mm256_setzero_si256()));
 
-            if (sizeof(neurons1) == 16)
-            {
-                *out++ = m1 + (m2 << 4);
-            }
-            else
-            {
-                usize bytes = sizeof(neurons1) / 32;
-                memcpy(out, &m1, bytes);
-                out += bytes;
-                memcpy(out, &m2, bytes);
-                out += bytes;
-            }
+            memcpy(out, &mask, 4);
+            out += 4;
         #endif
         }
     #elif defined(VECTOR)
