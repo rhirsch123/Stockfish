@@ -554,6 +554,12 @@ void update_accumulator_refresh_cache(Color                     perspective,
     Bitboard       removedBB = changedBB & entry.pieceBB;
     Bitboard       addedBB   = changedBB & pos.pieces();
 
+    if (popcount(pos.pieces()) < popcount(removedBB) + popcount(addedBB)) {
+        removedBB = 0ULL;
+        addedBB = pos.pieces();
+        entry.clear(featureTransformer.biases);
+    }
+
 #if defined(USE_AVX512ICL)
     PSQFeatureSet::write_indices(entry.pieces, pos.piece_array(), removedBB, addedBB, perspective,
                                  ksq, removed, added);
