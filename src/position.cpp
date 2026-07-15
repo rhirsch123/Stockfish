@@ -1421,96 +1421,52 @@ bool Position::see_ge(Move m, int threshold) const {
 
     assert(piece_on(from) != NO_PIECE);
 
-    int swap = PieceValue[piece_on(to)] - threshold;
-    if (swap < 0)
+    int value = PieceValue[piece_on(to)] - threshold;
+    if (value < 0)
         return false;
 
-    swap = PieceValue[piece_on(from)] - swap;
-    if (swap <= 0)
+    value -= PieceValue[piece_on(from)];
+    if (value >= 0)
         return true;
 
     assert(color_of(piece_on(from)) == sideToMove);
     Bitboard occupied  = pieces() ^ from ^ to;  // xoring to is important for pinned piece logic
-    Color    stm       = sideToMove;
+    Color    stm       = ~sideToMove;
     Bitboard attackers = attackers_to(to, occupied);
-    Bitboard stmAttackers, bb;
-    int      res = 1;
 
-    while (true)
-    {
-        stm = ~stm;
-        attackers &= occupied;
-
-        // If stm has no more attackers then give up: stm loses
-        if (!(stmAttackers = attackers & pieces(stm)))
-            break;
-
-        // Don't allow pinned pieces to attack as long as there are
-        // pinners on their original square.
+    while (true) {
+        Bitboard stmAttackers = attackers & pieces(stm) & occupied;
         if (pinners(~stm) & occupied)
-        {
             stmAttackers &= ~blockers_for_king(stm);
 
-            if (!stmAttackers)
+        if (!stmAttackers)
+            break;
+
+        int next_attacker;
+        for (next_attacker = PAWN; next_attacker < KING; next_attacker++) {
+            Bitboard bb = pieces(stm, next_attacker) & stmAttackers;
+            if (bb) {
+                occupied ^= least_significant_square_bb(bb);
                 break;
+            }
         }
 
-        res ^= 1;
+        value = -value - PieceValue[next_attacker] - 1;
+        stm = ~stm;
 
-        // Locate and remove the next least valuable attacker, and add to
-        // the bitboard 'attackers' any X-ray attackers behind it.
-        if ((bb = stmAttackers & pieces(PAWN)))
-        {
-            if ((swap = PawnValue - swap) < res)
-                break;
-            occupied ^= least_significant_square_bb(bb);
+        if (value >= 0) {
+            if (next_attacker == KING && (attackers & pieces(stm) & occupied))
+                stm = ~stm;
+            break;
+        }
 
+        if (next_attacker == PAWN || next_attacker == BISHOP || next_attacker == QUEEN)
             attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
-        }
-
-        else if ((bb = stmAttackers & pieces(KNIGHT)))
-        {
-            if ((swap = KnightValue - swap) < res)
-                break;
-            occupied ^= least_significant_square_bb(bb);
-        }
-
-        else if ((bb = stmAttackers & pieces(BISHOP)))
-        {
-            if ((swap = BishopValue - swap) < res)
-                break;
-            occupied ^= least_significant_square_bb(bb);
-
-            attackers |= attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN);
-        }
-
-        else if ((bb = stmAttackers & pieces(ROOK)))
-        {
-            if ((swap = RookValue - swap) < res)
-                break;
-            occupied ^= least_significant_square_bb(bb);
-
+        if (next_attacker == ROOK || next_attacker == QUEEN)
             attackers |= attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN);
-        }
-
-        else if ((bb = stmAttackers & pieces(QUEEN)))
-        {
-            swap = QueenValue - swap;
-            //  implies that the previous recapture was done by a higher rated piece than a Queen (King is excluded)
-            assert(swap >= res);
-            occupied ^= least_significant_square_bb(bb);
-
-            attackers |= (attacks_bb<BISHOP>(to, occupied) & pieces(BISHOP, QUEEN))
-                       | (attacks_bb<ROOK>(to, occupied) & pieces(ROOK, QUEEN));
-        }
-
-        else  // KING
-              // If we "capture" with the king but the opponent still has attackers,
-              // reverse the result.
-            return (attackers & ~pieces(stm)) ? res ^ 1 : res;
     }
 
-    return bool(res);
+    return stm != sideToMove;
 }
 
 // Tests whether the position is drawn by 50-move rule
