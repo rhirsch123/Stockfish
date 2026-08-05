@@ -181,8 +181,12 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
 
             assert(b1);
 
-            while (b1)
-                *moveList++ = Move::make<EN_PASSANT>(pop_lsb(b1), pos.ep_square());
+            while (b1) {
+                Square from = pop_lsb(b1);
+                Square to = pos.ep_square();
+                if (!(pinned & from) || (Attacks::line_bb(from, to) & pos.pieces(Us, KING)))
+                    *moveList++ = Move::make<EN_PASSANT>(from, to);
+            }
         }
     }
 
