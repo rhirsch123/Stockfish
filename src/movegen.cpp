@@ -195,30 +195,56 @@ Move* generate_pawn_moves(const Position& pos, Move* moveList, Bitboard target) 
 }
 
 
-template<Color Us, PieceType Pt>
-Move* generate_moves(const Position& pos, Move* moveList, Bitboard target) {
-
-    static_assert(Pt != KING && Pt != PAWN, "Unsupported piece type in generate_moves()");
-
-    const Square ksq = pos.square<KING>(Us);
-    const Bitboard pinned = pos.blockers_for_king(Us);
-    Bitboard bb = pos.pieces(Us, Pt);
-
-    if constexpr (Pt == KNIGHT) {
-        bb &= ~pinned;
+template<Color Us>
+Move* generate_knight_moves(const Position& pos, Move* moveList, Bitboard target) {
+    Bitboard bb = pos.pieces(Us, KNIGHT) & ~pos.blockers_for_king(Us);
+    while (bb) {
+        Square   from = pop_lsb(bb);
+        Bitboard b    = Attacks::attacks_bb<KNIGHT>(from, pos.pieces()) & target;
+        moveList = splat_moves(moveList, from, b);
     }
 
-    while (bb)
-    {
+    return moveList;
+}
+
+
+template<Color Us>
+Move* generate_slider_moves(const Position& pos, Move* moveList, Bitboard target) {
+    const Square ksq = pos.square<KING>(Us);
+    const Bitboard pinned = pos.blockers_for_king(Us);
+
+    const Bitboard blockers = pos.pieces();
+    const Bitboard queens = pos.pieces(Us, QUEEN);
+    const Bitboard bishops = pos.pieces(Us, BISHOP) | queens;
+    const Bitboard rooks = pos.pieces(Us, ROOK) | queens;
+
+    Bitboard bb = bishops & ~pinned;
+    while (bb) {
         Square   from = pop_lsb(bb);
-        Bitboard b    = Attacks::attacks_bb<Pt>(from, pos.pieces()) & target;
+        Bitboard b    = Attacks::attacks_bb<BISHOP>(from, blockers) & target;
+        moveList = splat_moves(moveList, from, b);
+    }
 
-        if constexpr (Pt != KNIGHT) {
-            if (pinned & from) {
-                b &= Attacks::line_bb(from, ksq);
-            }
-        }
+    bb = bishops & pinned;
+    while (bb) {
+        Square   from = pop_lsb(bb);
+        Bitboard b    =
+          Attacks::attacks_bb<BISHOP>(from, blockers) & Attacks::line_bb(from, ksq) & target;
+        moveList = splat_moves(moveList, from, b);
+    }
 
+    bb = rooks & ~pinned;
+    while (bb) {
+        Square   from = pop_lsb(bb);
+        Bitboard b    = Attacks::attacks_bb<ROOK>(from, blockers) & target;
+        moveList = splat_moves(moveList, from, b);
+    }
+
+    bb = rooks & pinned;
+    while (bb) {
+        Square   from = pop_lsb(bb);
+        Bitboard b    =
+          Attacks::attacks_bb<ROOK>(from, blockers) & Attacks::line_bb(from, ksq) & target;
         moveList = splat_moves(moveList, from, b);
     }
 
@@ -243,10 +269,8 @@ Move* generate_all(const Position& pos, Move* moveList) {
                                       : ~pos.pieces();  // QUIETS
 
         moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
-        moveList = generate_moves<Us, KNIGHT>(pos, moveList, target);
-        moveList = generate_moves<Us, BISHOP>(pos, moveList, target);
-        moveList = generate_moves<Us, ROOK>(pos, moveList, target);
-        moveList = generate_moves<Us, QUEEN>(pos, moveList, target);
+        moveList = generate_knight_moves<Us>(pos, moveList, target);
+        moveList = generate_slider_moves<Us>(pos, moveList, target);
     }
 
     if constexpr (Type == EVASIONS) {
